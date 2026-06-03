@@ -1,9 +1,17 @@
-var express = require('express');
-var router = express.Router();
+var express = require('express')
+var router = express.Router()
 
-/* GET users listing. */
-router.get('/', function(req, res, next) {
-  res.send('respond with a resource');
-});
+router.get('/', function (req, res, next) {
+    res.json({
+        users: []
+    })
+})
 
-module.exports = router;
+router.post('/', function (req, res) {
+    res.status(201).json({
+        message: 'User payload received',
+        user: req.body
+    })
+})
+
+module.exports = router
