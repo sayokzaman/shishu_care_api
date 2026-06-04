@@ -4,9 +4,11 @@
     "private": true,
     "scripts": {
         "start": "node ./bin/www",
-        "prisma:generate": "prisma generate",
-        "prisma:migrate": "prisma migrate dev",
-        "prisma:studio": "prisma studio",
+        "db:generate": "prisma generate",
+        "db:migrate": "prisma migrate dev",
+        "db:seed": "prisma db seed",
+        "db:studio": "prisma studio",
+        "db:reset": "prisma migrate reset --force && prisma db seed",
         "db:setup": "node ./scripts/setup-database.js"
     },
     "dependencies": {
@@ -27,5 +29,8 @@
         "prisma": "^6.19.3",
         "ts-node": "^10.9.2",
         "typescript": "^6.0.3"
+    },
+    "prisma": {
+        "seed": "node prisma/seed.js"
     }
 }

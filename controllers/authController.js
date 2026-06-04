@@ -1,64 +1,166 @@
-var prismaWrapper = require('../lib/prisma')
-var bcrypt = require('bcryptjs')
-var jwt = require('jsonwebtoken')
+const { prisma } = require('../lib/db')
+const bcrypt = require('bcryptjs')
+const jwt = require('jsonwebtoken')
 
-var JWT_SECRET = process.env.JWT_SECRET || 'replace_this_with_a_secret'
-var JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d'
+const JWT_SECRET = process.env.JWT_SECRET || 'replace_this_with_a_secret'
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d'
 
-exports.register = async function (req, res, next) {
-    try {
-        var name = req.body.name
-        var email = req.body.email
-        var password = req.body.password
+// 1. Parent Register/Login via Phone (Auto-Registration)
+exports.phoneLogin = async function (req, res, next) {
+  try {
+    const { phone, language, role, division, district, upazila } = req.body
 
-        if (!name || !email || !password) {
-            return res.status(400).json({ message: 'name, email and password are required' })
-        }
-
-        var client = prismaWrapper && prismaWrapper._getClient()
-        if (!client) return res.status(500).json({ message: 'Prisma client is not available' })
-
-        var existing = await client.user.findUnique({ where: { email: email } })
-        if (existing) {
-            return res.status(409).json({ message: 'Email already in use' })
-        }
-
-        var hash = await bcrypt.hash(password, 10)
-
-        var user = await client.user.create({ data: { name: name, email: email, password: hash } })
-
-        var token = jwt.sign({ sub: user.id }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN })
-
-        res.status(201).json({ token: token, user: { id: user.id, name: user.name, email: user.email } })
-    } catch (err) {
-        next(err)
+    if (!phone) {
+      return res.status(400).json({ message: 'Phone number is required' })
     }
+
+    let parent = await prisma.parent.findUnique({
+      where: { phone }
+    })
+
+    if (parent) {
+      // Update existing parent if details are provided
+      const updateData = {}
+      if (language) updateData.language = language
+      if (role) updateData.role = role
+      if (division) updateData.division = division
+      if (district) updateData.district = district
+      if (upazila) updateData.upazila = upazila
+
+      if (Object.keys(updateData).length > 0) {
+        parent = await prisma.parent.update({
+          where: { id: parent.id },
+          data: updateData
+        })
+      }
+    } else {
+      // Create new parent (Auto-Registration)
+      parent = await prisma.parent.create({
+        data: {
+          phone,
+          language: language || 'bn',
+          role: role || 'parent',
+          division: division || null,
+          district: district || null,
+          upazila: upazila || null,
+        }
+      })
+    }
+
+    const token = jwt.sign(
+      { sub: parent.id, role: parent.role, phone: parent.phone },
+      JWT_SECRET,
+      { expiresIn: JWT_EXPIRES_IN }
+    )
+
+    res.status(200).json({
+      token,
+      parent: {
+        id: parent.id,
+        phone: parent.phone,
+        language: parent.language,
+        role: parent.role,
+        division: parent.division,
+        district: parent.district,
+        upazila: parent.upazila
+      }
+    })
+  } catch (err) {
+    next(err)
+  }
 }
 
-exports.login = async function (req, res, next) {
-    try {
-        var email = req.body.email
-        var password = req.body.password
+// 2. Facility Admin Login (Email + PIN)
+exports.adminLogin = async function (req, res, next) {
+  try {
+    const { email, pin } = req.body
 
-        if (!email || !password) {
-            return res.status(400).json({ message: 'email and password are required' })
-        }
-
-        var client = prismaWrapper && prismaWrapper._getClient()
-        if (!client) return res.status(500).json({ message: 'Prisma client is not available' })
-
-        var user = await client.user.findUnique({ where: { email: email } })
-        if (!user || !user.password) {
-            return res.status(401).json({ message: 'Invalid credentials' })
-        }
-
-        var ok = await bcrypt.compare(password, user.password)
-        if (!ok) return res.status(401).json({ message: 'Invalid credentials' })
-
-        var token = jwt.sign({ sub: user.id }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN })
-
-        res.json({ token: token, user: { id: user.id, name: user.name, email: user.email } })
-    } catch (err) {
-        next(err)
+    if (!email || !pin) {
+      return res.status(400).json({ message: 'Email and PIN are required' })
     }
+
+    const admin = await prisma.facilityAdmin.findUnique({
+      where: { email },
+      include: { facility: true }
+    })
+
+    if (!admin) {
+      return res.status(401).json({ message: 'Invalid credentials' })
+    }
+
+    const isMatch = await bcrypt.compare(pin, admin.pinHash)
+    if (!isMatch) {
+      return res.status(401).json({ message: 'Invalid credentials' })
+    }
+
+    // Update last login timestamp
+    await prisma.facilityAdmin.update({
+      where: { id: admin.id },
+      data: { lastLogin: new Date() }
+    })
+
+    const token = jwt.sign(
+      { sub: admin.id, role: 'admin', email: admin.email, facilityId: admin.facilityId },
+      JWT_SECRET,
+      { expiresIn: JWT_EXPIRES_IN }
+    )
+
+    res.status(200).json({
+      token,
+      admin: {
+        id: admin.id,
+        email: admin.email,
+        facilityId: admin.facilityId,
+        facilityName: admin.facility.name
+      }
+    })
+  } catch (err) {
+    next(err)
+  }
+}
+
+// 3. Register Facility Admin (Helper route for setup/testing)
+exports.adminRegister = async function (req, res, next) {
+  try {
+    const { email, pin, facilityId } = req.body
+
+    if (!email || !pin || !facilityId) {
+      return res.status(400).json({ message: 'Email, PIN and facilityId are required' })
+    }
+
+    // Verify facility exists
+    const facility = await prisma.facility.findUnique({
+      where: { id: facilityId }
+    })
+    if (!facility) {
+      return res.status(404).json({ message: 'Facility not found' })
+    }
+
+    const pinString = String(pin)
+    if (pinString.length < 4 || pinString.length > 6) {
+      return res.status(400).json({ message: 'PIN must be between 4 and 6 digits' })
+    }
+
+    // Encrypt PIN
+    const pinHash = await bcrypt.hash(pinString, 10)
+
+    const admin = await prisma.facilityAdmin.create({
+      data: {
+        email,
+        pinHash,
+        facilityId
+      }
+    })
+
+    res.status(201).json({
+      message: 'Facility admin registered successfully',
+      admin: {
+        id: admin.id,
+        email: admin.email,
+        facilityId: admin.facilityId
+      }
+    })
+  } catch (err) {
+    next(err)
+  }
 }

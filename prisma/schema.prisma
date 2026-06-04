@@ -3,17 +3,400 @@ generator client {
 }
 
 datasource db {
-  provider = "mysql"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
-model User {
-  id        Int      @id @default(autoincrement())
-  name      String
-  email     String?  @unique
-  password  String
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+// ─────────────────────────────────────────────────────────────────
+// PARENT
+// Primary user of the app. Can be a mother/caregiver (role="parent")
+// or a community health worker managing multiple families (role="chw").
+// Phone is the only required identifier — no email, no password.
+// ─────────────────────────────────────────────────────────────────
+model Parent {
+  id         String    @id @default(cuid())
+  phone      String    @unique
+  // "bn" = Bangla (default for rural BD), "en" = English
+  language   String    @default("bn")
+  // "parent" = single-family simplified UI
+  // "chw"    = multi-family batch management UI with extra clinical fields
+  role       String    @default("parent")
+  // Set during onboarding via cascading dropdown — no GPS required
+  division   String?
+  district   String?
+  upazila    String?
+  // Timestamps used for client↔DB sync conflict resolution
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  // Last time this parent's Zustand state was successfully synced to DB
+  lastSyncAt DateTime?
 
-  @@map("users")
+  children       Child[]
+  communityPosts CommunityPost[]
+
+  @@index([phone])
+  @@index([upazila])
+  @@map("parents")
+}
+
+// ─────────────────────────────────────────────────────────────────
+// CHILD
+// One row per child (or pregnancy). A Parent can have multiple children.
+// A CHW account can have children belonging to multiple families —
+// in that case, guardianName/guardianPhone stores the biological
+// mother's contact, and parentId is the CHW's account ID.
+// ─────────────────────────────────────────────────────────────────
+model Child {
+  id              String    @id @default(cuid())
+  parentId        String
+  parent          Parent    @relation(fields: [parentId], references: [id], onDelete: Cascade)
+  name            String
+  // Store in English regardless of UI language: "male" | "female"
+  sex             String
+  // Postnatal: this field is set and drives all age calculations + EPI schedule
+  dateOfBirth     DateTime?
+  // Prenatal: set when mother enters EDD during onboarding (-9 months)
+  // When baby is born: caller must set dateOfBirth AND clear expectedDueDate in the same PATCH
+  expectedDueDate DateTime?
+  // Optional baseline — can be null and filled later by CHW on first home visit
+  birthWeight     Float?    // kilograms
+  knownConditions String?   // free text, bilingual acceptable
+  // For CHW role: the actual biological guardian's details
+  // These are separate from the CHW account holder's phone
+  guardianName    String?
+  guardianPhone   String?
+  // Soft delete — NEVER hard delete a child record
+  isActive        Boolean   @default(true)
+  deletedAt       DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  vaccinationRecords VaccinationRecord[]
+  milestoneRecords   MilestoneRecord[]
+  growthRecords      GrowthRecord[]
+  symptomChecks      SymptomCheck[]
+  smsReminders       SmsReminder[]
+
+  // All queries listing children MUST include: where: { isActive: true }
+  @@index([parentId])
+  @@index([isActive])
+  @@map("children")
+}
+
+// ─────────────────────────────────────────────────────────────────
+// VACCINATION RECORD
+// One row per vaccine dose per child.
+// The EPI schedule (what vaccines exist and when they're due by age)
+// lives in /data/epi-schedule.ts — do NOT replicate it here.
+// This model only tracks per-child dose status.
+// All records for a child are created in bulk when the child is first saved.
+// ─────────────────────────────────────────────────────────────────
+model VaccinationRecord {
+  id            String    @id @default(cuid())
+  childId       String
+  child         Child     @relation(fields: [childId], references: [id], onDelete: Cascade)
+  // vaccineId MUST match the id field in /data/epi-schedule.ts
+  // Examples: "bcg", "penta1", "penta2", "penta3", "pcv1", "pcv2", "pcv3",
+  //           "opv0", "opv1", "opv2", "opv3", "ipv", "mr1", "mr2", "td1", "td2"
+  vaccineId     String
+  // Copy display names from static data at record creation — needed for offline PDF export
+  vaccineName   String
+  vaccineNameBn String
+  // Computed from child.dateOfBirth + vaccine.offsetWeeks at record creation time
+  scheduledDate DateTime
+  // Set when mother taps "Mark as received"
+  receivedDate  DateTime?
+  // IMPORTANT: Do NOT store "overdue" here.
+  // Compute it at query time: status === "scheduled" AND scheduledDate < now()
+  // Valid stored values: "scheduled" | "received" | "skipped"
+  // "skipped" is rare and requires a note explaining why
+  status        String    @default("scheduled")
+  // CHW-only optional fields for facility-level vaccine tracking
+  lotNumber     String?
+  batchId       String?
+  notes         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // One record per vaccine dose per child — enforced at DB level
+  @@unique([childId, vaccineId])
+  @@index([childId])
+  @@index([status])
+  @@index([scheduledDate])
+  @@map("vaccination_records")
+}
+
+// ─────────────────────────────────────────────────────────────────
+// MILESTONE RECORD
+// One row per WHO milestone per child.
+// The milestone definitions (text descriptions, age groups, categories)
+// live in /data/milestones.ts — do NOT replicate the content here.
+// This model only tracks completion status per child.
+// ─────────────────────────────────────────────────────────────────
+model MilestoneRecord {
+  id            String    @id @default(cuid())
+  childId       String
+  child         Child     @relation(fields: [childId], references: [id], onDelete: Cascade)
+  // milestoneId must match the id field in /data/milestones.ts static data
+  milestoneId   String
+  // Age group string — copied from static data at record creation for offline PDF export
+  // Values: "0-3m" | "3-6m" | "6-9m" | "9-12m" | "12-18m" | "18-24m" | "2-3y" | "3-4y" | "4-5y"
+  ageGroup      String
+  // Values: "motor" | "speech" | "social" | "cognitive"
+  category      String
+  // Copy from static data at creation — ensures PDF export works offline
+  descriptionEn String
+  descriptionBn String
+  completed     Boolean   @default(false)
+  completedAt   DateTime?
+  // Set when parent flags a milestone as possibly delayed — triggers referral nudge
+  concernNote   String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([childId, milestoneId])
+  @@index([childId])
+  @@index([ageGroup])
+  @@index([completed])
+  @@map("milestone_records")
+}
+
+// ─────────────────────────────────────────────────────────────────
+// GROWTH RECORD
+// One row per measurement session. Multiple records per child (time series).
+// Used for Recharts weight/height/MUAC visualisation.
+// ─────────────────────────────────────────────────────────────────
+model GrowthRecord {
+  id       String   @id @default(cuid())
+  childId  String
+  child    Child    @relation(fields: [childId], references: [id], onDelete: Cascade)
+  // Date of measurement — may be in the past (retroactive data entry)
+  date     DateTime
+  weight   Float?   // kilograms, store to 2 decimal places
+  height   Float?   // centimetres, store to 1 decimal place
+  // Mid-upper arm circumference in centimetres
+  muac     Float?
+  // WHO MUAC thresholds for children aged 6–59 months:
+  //   >= 12.5 cm  → "green"  (well-nourished)
+  //   11.5–12.4cm → "yellow" (moderate acute malnutrition, MAM)
+  //   < 11.5 cm   → "red"    (severe acute malnutrition, SAM — urgent referral)
+  //   null        → either no MUAC measured OR child is outside 6–59m window
+  // Compute server-side in db-helpers.ts BEFORE storing. Client must never set this.
+  muacBand String?  // "green" | "yellow" | "red" | null
+  // WHO z-score classifications — compute server-side
+  // Values: "normal" | "overweight" | "underweight" | "wasted" | "stunted" | null
+  weightForAgeStatus String?
+  heightForAgeStatus String?
+  notes    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Must always query with orderBy: { date: "asc" } for Recharts time-series charts
+  @@index([childId])
+  @@index([date])
+  @@map("growth_records")
+}
+
+// ─────────────────────────────────────────────────────────────────
+// SYMPTOM CHECK (Triage Session)
+// One row per triage session initiated by a parent or CHW.
+// This is the most safety-critical model in the entire database.
+// Read the implementation notes in Section 5 before touching this model.
+// ─────────────────────────────────────────────────────────────────
+model SymptomCheck {
+  id               String    @id @default(cuid())
+  childId          String
+  child            Child     @relation(fields: [childId], references: [id], onDelete: Cascade)
+  // JSON-serialised string array of symptom IDs selected by the mother
+  // Example stored value: '["fever","cough","diarrhea"]'
+  // Always write with JSON.stringify(), always read with JSON.parse()
+  symptoms         String
+
+  // ══ SAFETY CRITICAL — READ CAREFULLY ══
+  // ruleEngineLevel: Set by the IMCI rule engine BEFORE any AI call.
+  // Written ONCE at creation. MUST NEVER be changed by any UPDATE.
+  // Represents the minimum safe urgency level for this symptom combination.
+  // 1 = Home Care  2 = Visit CHW  3 = Upazila HC  4 = Emergency
+  ruleEngineLevel  Int
+
+  // urgencyLevel: Final displayed level. Always >= ruleEngineLevel.
+  // The server-side helper enforces: urgencyLevel = Math.max(ruleEngineLevel, aiLevel)
+  // This can equal ruleEngineLevel (AI agrees) or be higher (AI raises severity)
+  // but it can NEVER be lower. Enforce this in createSymptomCheck() in db-helpers.ts.
+  urgencyLevel     Int
+
+  // Display label in English — stored for PDF export and history display
+  // Values: "home_care" | "visit_chw" | "upazila_hc" | "emergency"
+  urgencyLabel     String
+
+  // Whether the Groq AI call succeeded and contributed to the response
+  aiEnhanced       Boolean   @default(false)
+
+  // Bilingual immediate action instruction — from AI if available, static fallback otherwise
+  immediateActionEn String?
+  immediateActionBn String?
+
+  // JSON-serialised string arrays of up to 3 advice bullets each
+  // Example: '["Give ORS every 5 minutes","Continue breastfeeding","Monitor for blood in stool"]'
+  // Enforce max 3 items in createSymptomCheck() before storing
+  bulletPointsEn   String?
+  bulletPointsBn   String?
+
+  // For Level 3+: reference to the facility recommended to the mother
+  facilityId       String?
+
+  // Episode lifecycle — the only fields that can be updated after creation
+  resolved         Boolean   @default(false)
+  resolvedAt       DateTime?
+  // Values: "home_care_worked" | "visited_chw" | "visited_facility" | "admitted" | "other"
+  outcomeNote      String?
+
+  createdAt        DateTime  @default(now())
+  // updatedAt is only ever written for: resolved, resolvedAt, outcomeNote
+  // Medical fields (ruleEngineLevel, urgencyLevel, symptoms, bulletPoints) are immutable
+  updatedAt        DateTime  @updatedAt
+
+  @@index([childId])
+  @@index([urgencyLevel])
+  @@index([resolved])
+  @@index([createdAt])
+  @@map("symptom_checks")
+}
+
+// ─────────────────────────────────────────────────────────────────
+// FACILITY
+// Seeded once from /data/facilities.ts. Facility staff update the
+// 4 availability fields via the admin web panel.
+// staleWarning is NOT a stored column — always compute it at query time.
+// ─────────────────────────────────────────────────────────────────
+model Facility {
+  id              String    @id @default(cuid())
+  // Human-readable unique slug for upsert operations — e.g. "dhaka-upazila-hc-savar"
+  slug            String    @unique
+  name            String
+  nameBn          String?
+  // Determines which urgency level(s) this facility is shown for in the finder:
+  // "chw_post"          → Level 2
+  // "upazila_hc"        → Level 3
+  // "district_hospital" → Level 3 (higher capacity than upazila HC)
+  // "medical_college"   → Level 4
+  // "tertiary"          → Level 4
+  type            String
+  // Bangladesh administrative location
+  division        String
+  district        String
+  upazila         String?
+  address         String?
+  addressBn       String?
+  phone           String?
+  // Optional coordinates — used only if available.
+  // App uses upazila-based matching, NOT GPS proximity — do not make these required.
+  latitude        Float?
+  longitude       Float?
+
+  // ── AVAILABILITY FIELDS — updated by facility admin panel only ──
+  // Default all to false/null — facility staff must actively update them
+  beds            Int?      // current available beds; null = unknown
+  oxygenAvailable Boolean   @default(false)
+  pediatricUnit   Boolean   @default(false)
+  powerBackup     Boolean   @default(false)
+  // Updated on every admin panel submission
+  // COMPUTE staleWarning at query time: (now - lastUpdatedAt) > 86400000ms
+  // DO NOT add a staleWarning column here
+  lastUpdatedAt   DateTime  @default(now())
+
+  isActive        Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  facilityAdmin   FacilityAdmin?
+
+  @@index([division, district])
+  @@index([upazila])
+  @@index([type])
+  @@index([isActive])
+  @@map("facilities")
+}
+
+// ─────────────────────────────────────────────────────────────────
+// FACILITY ADMIN
+// One admin account per facility. Separate auth system from parents.
+// Authenticated with email + PIN (not phone OTP).
+// ─────────────────────────────────────────────────────────────────
+model FacilityAdmin {
+  id         String   @id @default(cuid())
+  email      String   @unique
+  // bcrypt hash of a 4–6 digit PIN — NEVER store plaintext
+  pinHash    String
+  facilityId String   @unique
+  facility   Facility @relation(fields: [facilityId], references: [id])
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  lastLogin  DateTime?
+
+  @@index([email])
+  @@map("facility_admins")
+}
+
+// ─────────────────────────────────────────────────────────────────
+// COMMUNITY POST
+// Public health tips and Q&A filtered by upazila.
+// Moderation is manual: admin sets isVisible = false to hide a post.
+// ─────────────────────────────────────────────────────────────────
+model CommunityPost {
+  id          String   @id @default(cuid())
+  authorId    String
+  author      Parent   @relation(fields: [authorId], references: [id])
+  content     String   // max 500 characters — enforce in API route validation
+  // Store author's location at time of posting for upazila-based feed filtering
+  division    String?
+  district    String?
+  upazila     String?
+  upvotes     Int      @default(0)
+  // isModerated = true means it has been reviewed by an admin (approved or hidden)
+  isModerated Boolean  @default(false)
+  // isVisible = false hides the post from all non-admin users
+  isVisible   Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([upazila])
+  @@index([isVisible])
+  @@index([createdAt])
+  @@map("community_posts")
+}
+
+// ─────────────────────────────────────────────────────────────────
+// SMS REMINDER
+// Queue table consumed by n8n webhook polling.
+// One row per SMS to be sent (7 days before each vaccine due date).
+// Created by markVaccineReceived() in db-helpers.ts.
+// ─────────────────────────────────────────────────────────────────
+model SmsReminder {
+  id              String    @id @default(cuid())
+  childId         String
+  child           Child     @relation(fields: [childId], references: [id], onDelete: Cascade)
+  vaccineId       String
+  vaccineName     String
+  vaccineNameBn   String
+  // The phone number to send to — may be the biological mother's OR the CHW's
+  // Taken from Parent.phone at the time the vaccination is marked received
+  phoneNumber     String
+  // scheduledSendAt = vaccine.scheduledDate - 7 days
+  scheduledSendAt DateTime
+  sentAt          DateTime?
+  // "queued"    = waiting to be picked up by n8n webhook poll
+  // "sent"      = SMS gateway confirmed delivery
+  // "failed"    = gateway returned an error (n8n retries up to 3 times)
+  // "cancelled" = vaccine was marked received before this SMS was sent
+  status          String    @default("queued")
+  retryCount      Int       @default(0)
+  errorMessage    String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([status])
+  @@index([scheduledSendAt])
+  @@index([childId])
+  @@map("sms_reminders")
 }
