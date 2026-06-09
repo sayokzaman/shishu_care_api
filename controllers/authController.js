@@ -7,29 +7,34 @@ var JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d'
 
 exports.register = async function (req, res, next) {
     try {
-        var name = req.body.name
-        var email = req.body.email
+        var fullNameEn = req.body.fullNameEn || req.body.name
+        var fullNameBn = req.body.fullNameBn || null
+        var phone = req.body.phone
+        var email = req.body.email || null
         var password = req.body.password
+        var role = req.body.role === 'health_worker' ? 'health_worker' : 'parent'
 
-        if (!name || !email || !password) {
-            return res.status(400).json({ message: 'name, email and password are required' })
+        if (!fullNameEn || !phone || !password) {
+            return res.status(400).json({ message: 'fullNameEn, phone and password are required' })
         }
 
         var client = prismaWrapper && prismaWrapper._getClient()
         if (!client) return res.status(500).json({ message: 'Prisma client is not available' })
 
-        var existing = await client.user.findUnique({ where: { email: email } })
+        var existing = await client.user.findUnique({ where: { phone: phone } })
         if (existing) {
-            return res.status(409).json({ message: 'Email already in use' })
+            return res.status(409).json({ message: 'Phone number already registered' })
         }
 
         var hash = await bcrypt.hash(password, 10)
 
-        var user = await client.user.create({ data: { name: name, email: email, password: hash } })
+        var user = await client.user.create({
+            data: { fullNameEn: fullNameEn, fullNameBn: fullNameBn, phone: phone, email: email, password: hash, role: role }
+        })
 
         var token = jwt.sign({ sub: user.id }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN })
 
-        res.status(201).json({ token: token, user: { id: user.id, name: user.name, email: user.email } })
+        res.status(201).json({ token: token, user: _publicUser(user) })
     } catch (err) {
         next(err)
     }
@@ -37,17 +42,17 @@ exports.register = async function (req, res, next) {
 
 exports.login = async function (req, res, next) {
     try {
-        var email = req.body.email
+        var phone = req.body.phone
         var password = req.body.password
 
-        if (!email || !password) {
-            return res.status(400).json({ message: 'email and password are required' })
+        if (!phone || !password) {
+            return res.status(400).json({ message: 'phone and password are required' })
         }
 
         var client = prismaWrapper && prismaWrapper._getClient()
         if (!client) return res.status(500).json({ message: 'Prisma client is not available' })
 
-        var user = await client.user.findUnique({ where: { email: email } })
+        var user = await client.user.findUnique({ where: { phone: phone } })
         if (!user || !user.password) {
             return res.status(401).json({ message: 'Invalid credentials' })
         }
@@ -57,8 +62,19 @@ exports.login = async function (req, res, next) {
 
         var token = jwt.sign({ sub: user.id }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN })
 
-        res.json({ token: token, user: { id: user.id, name: user.name, email: user.email } })
+        res.json({ token: token, user: _publicUser(user) })
     } catch (err) {
         next(err)
+    }
+}
+
+function _publicUser(user) {
+    return {
+        id: user.id,
+        fullNameEn: user.fullNameEn,
+        fullNameBn: user.fullNameBn,
+        phone: user.phone,
+        email: user.email,
+        role: user.role,
     }
 }
