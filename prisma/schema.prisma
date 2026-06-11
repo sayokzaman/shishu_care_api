@@ -13,6 +13,89 @@ enum UserRole {
   health_worker
 }
 
+enum FeedingMethod {
+  breastfed
+  bottle_breast_milk
+  bottle_formula
+  spoon_fed
+  cup_fed
+  self_fed
+  tube_fed
+  mixed
+}
+
+enum BreastSide {
+  left
+  right
+  both
+}
+
+enum FeedingDifficulty {
+  easy
+  moderate
+  difficult
+  refused
+}
+
+enum FoodConsistency {
+  liquid
+  puree
+  mashed
+  minced
+  soft_pieces
+  regular
+}
+
+enum SleepType {
+  nap
+  night
+  rest
+}
+
+enum SleepQuality {
+  good
+  fair
+  poor
+}
+
+enum ActivityType {
+  tummy_time
+  play
+  bath
+  outdoor
+  reading
+  massage
+  music
+  other
+}
+
+enum MilestoneDomain {
+  motor
+  language
+  social
+  cognitive
+  health
+}
+
+enum FoodCategory {
+  breast_milk
+  formula
+  water
+  juice
+  grains_cereals
+  legumes
+  fish
+  meat_poultry
+  egg
+  vegetables
+  fruits
+  dairy
+  mixed_meal
+  commercial_baby_food
+  snack
+  other
+}
+
 // ── Administrative Location Hierarchy ────────────────────────────────────────
 
 model Division {
@@ -81,6 +164,10 @@ model User {
   healthWorker       HealthWorker?
   growthMeasurements GrowthMeasurement[]
   illnessRecords     IllnessRecord[]
+  feedingSessions    FeedingSession[]
+  sleepSessions      SleepSession[]
+  activitySessions   ActivitySession[]
+  milestoneChecks    ChildMilestone[]   @relation("MilestoneCheckedBy")
 
   @@map("users")
 }
@@ -167,6 +254,10 @@ model Child {
   growthMeasurements GrowthMeasurement[]
   illnessRecords     IllnessRecord[]
   vaccinations       ChildVaccination[]
+  feedingSessions    FeedingSession[]
+  sleepSessions      SleepSession[]
+  activitySessions   ActivitySession[]
+  childMilestones    ChildMilestone[]
 
   @@map("children")
 }
@@ -177,9 +268,10 @@ model GrowthMeasurement {
   measuredBy Int      @map("measured_by")
   measuredAt DateTime @map("measured_at")
   ageDays    Int      @map("age_days")
-  weightKg   Float    @map("weight_kg")
-  heightCm   Float    @map("height_cm")
-  notes      String?  @db.Text
+  weightKg              Float    @map("weight_kg")
+  heightCm              Float    @map("height_cm")
+  headCircumferenceCm   Float?   @map("head_circumference_cm")
+  notes                 String?  @db.Text
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
 
@@ -259,4 +351,147 @@ model ChildVaccination {
   vaccineDose VaccineDose @relation(fields: [vaccineDoseId], references: [id])
 
   @@map("child_vaccinations")
+}
+
+// ── Feeding Tracking ─────────────────────────────────────────────────────────
+
+model FeedingSession {
+  id               Int               @id @default(autoincrement())
+  childId          Int               @map("child_id")
+  loggedBy         Int               @map("logged_by")
+  fedAt            DateTime          @map("fed_at")
+  method           FeedingMethod
+
+  // Breastfeeding-specific
+  breastSide       BreastSide?       @map("breast_side")
+  durationMinutes  Int?              @map("duration_minutes")
+
+  // Bottle / liquid-only sessions (formula or expressed breast milk)
+  amountMl         Float?            @map("amount_ml")
+
+  // Child's state during the feed
+  mood             String?           // free text: happy, fussy, drowsy, crying, sleepy
+  appetite         FeedingDifficulty?
+
+  // Post-feeding flags
+  vomitedAfter     Boolean           @default(false) @map("vomited_after")
+  choked           Boolean           @default(false)
+  allergicReaction Boolean           @default(false) @map("allergic_reaction")
+
+  notes            String?           @db.Text
+  createdAt        DateTime          @default(now()) @map("created_at")
+  updatedAt        DateTime          @updatedAt @map("updated_at")
+
+  child            Child             @relation(fields: [childId], references: [id])
+  loggedByUser     User              @relation(fields: [loggedBy], references: [id])
+  items            FeedingItem[]
+
+  @@map("feeding_sessions")
+}
+
+model FeedingItem {
+  id                Int              @id @default(autoincrement())
+  sessionId         Int              @map("session_id")
+  foodNameBn        String           @map("food_name_bn")
+  foodNameEn        String?          @map("food_name_en")
+  category          FoodCategory
+  consistency       FoodConsistency?
+
+  // Amount — use whichever fits; amountDescription handles non-standard servings
+  amountGrams       Float?           @map("amount_grams")
+  amountMl          Float?           @map("amount_ml")
+  amountDescription String?          @map("amount_description") // e.g. "2 tablespoons", "half a bowl"
+
+  // Introduction & tolerance tracking
+  isNewFood         Boolean          @default(false) @map("is_new_food")
+  accepted          Boolean?         // null = partial, true = fully eaten, false = refused
+  reaction          String?          @db.Text // reaction specific to this food item
+
+  createdAt         DateTime         @default(now()) @map("created_at")
+  updatedAt         DateTime         @updatedAt @map("updated_at")
+
+  session           FeedingSession   @relation(fields: [sessionId], references: [id])
+
+  @@map("feeding_items")
+}
+
+// ── Sleep Tracking ────────────────────────────────────────────────────────────
+
+model SleepSession {
+  id              Int           @id @default(autoincrement())
+  childId         Int           @map("child_id")
+  loggedBy        Int           @map("logged_by")
+  startedAt       DateTime      @map("started_at")
+  endedAt         DateTime?     @map("ended_at")
+  type            SleepType
+  quality         SleepQuality?
+  location        String?       // e.g. "crib", "arms", "stroller"
+  notes           String?       @db.Text
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  child           Child         @relation(fields: [childId], references: [id])
+  loggedByUser    User          @relation(fields: [loggedBy], references: [id])
+
+  @@map("sleep_sessions")
+}
+
+// ── Activity Tracking ─────────────────────────────────────────────────────────
+
+model ActivitySession {
+  id              Int          @id @default(autoincrement())
+  childId         Int          @map("child_id")
+  loggedBy        Int          @map("logged_by")
+  startedAt       DateTime     @map("started_at")
+  durationMinutes Int?         @map("duration_minutes")
+  type            ActivityType
+  notes           String?      @db.Text
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
+
+  child           Child        @relation(fields: [childId], references: [id])
+  loggedByUser    User         @relation(fields: [loggedBy], references: [id])
+
+  @@map("activity_sessions")
+}
+
+// ── Milestone Tracking ────────────────────────────────────────────────────────
+
+model Milestone {
+  id           Int             @id @default(autoincrement())
+  ageBracket   String          @map("age_bracket") // prenatal | 0-1m | 1-6m | 6-12m | 1-2y | 2-3y | 3-5y
+  domain       MilestoneDomain
+  textEn       String          @map("text_en") @db.Text
+  textBn       String?         @map("text_bn") @db.Text
+  sortOrder    Int             @default(0) @map("sort_order")
+  source       String?         // WHO | DGHS | EPI
+  minAgeMonths Int?            @map("min_age_months") // earliest expected age
+  maxAgeMonths Int?            @map("max_age_months") // latest before flagging
+  isKey        Boolean         @default(false) @map("is_key") // red-flag milestone
+  createdAt    DateTime        @default(now()) @map("created_at")
+  updatedAt    DateTime        @updatedAt @map("updated_at")
+
+  childMilestones ChildMilestone[]
+
+  @@map("milestones")
+}
+
+model ChildMilestone {
+  id          Int       @id @default(autoincrement())
+  childId     Int       @map("child_id")
+  milestoneId Int       @map("milestone_id")
+  isAchieved  Boolean   @default(false) @map("is_achieved")
+  achievedAt  DateTime? @map("achieved_at")
+  checkedBy   Int?      @map("checked_by")
+  notes       String?   @db.Text
+  flagged     Boolean   @default(false) // parent marked as concern
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  child         Child     @relation(fields: [childId], references: [id])
+  milestone     Milestone @relation(fields: [milestoneId], references: [id])
+  checkedByUser User?     @relation("MilestoneCheckedBy", fields: [checkedBy], references: [id])
+
+  @@unique([childId, milestoneId])
+  @@map("child_milestones")
 }

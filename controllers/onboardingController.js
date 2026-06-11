@@ -11,11 +11,11 @@ function yearsBetween(earlier, later) {
 }
 
 async function getParentOrFail(client, userId, res) {
-    var user = await client.user.findUnique({ where: { id: userId } })
+    var user = await client.user.findUnique({ where: { id: parseInt(userId) } })
     if (!user) { res.status(404).json({ message: 'User not found' }); return null }
     if (user.role !== 'parent') { res.status(403).json({ message: 'Only parents can complete onboarding' }); return null }
 
-    var parent = await client.parent.findUnique({ where: { userId } })
+    var parent = await client.parent.findUnique({ where: { userId: parseInt(userId) } })
     if (!parent) { res.status(404).json({ message: 'Parent profile not found' }); return null }
 
     return parent
