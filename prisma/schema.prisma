@@ -7,273 +7,256 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model User {
-  id           Int      @id @default(autoincrement())
-  fullNameEn   String?  @map("full_name_en")
-  fullNameBn   String?  @map("full_name_bn")
-  phone        String   @unique
-  email        String?  @unique
-  password     String
-  role         Role     @default(parent)
-  avatarUrl    String?  @map("avatar_url")
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
-
-  children     Child[]
-  growthRecorded GrowthRecord[] @relation("RecordedBy")
-  vaccineAdministered VaccinationRecord[] @relation("AdministeredBy")
-  aiQueries    AiQuery[]
-
-  @@map("users")
-}
-
-enum Role {
+enum UserRole {
+  admin
   parent
   health_worker
 }
 
+// ── Administrative Location Hierarchy ────────────────────────────────────────
+
 model Division {
-  id        Int        @id @default(autoincrement())
-  nameEn    String     @map("name_en")
-  nameBn    String     @map("name_bn")
-  districts District[]
+  id        Int      @id @default(autoincrement())
+  nameBn    String   @map("name_bn")
+  nameEn    String   @map("name_en")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  districts     District[]
+  parents       Parent[]
+  healthWorkers HealthWorker[]
+  children      Child[]
 
   @@map("divisions")
 }
 
 model District {
-  id         Int       @id @default(autoincrement())
-  divisionId Int       @map("division_id")
-  nameEn     String    @map("name_en")
-  nameBn     String    @map("name_bn")
-  division   Division  @relation(fields: [divisionId], references: [id], onDelete: Cascade)
-  upazilas   Upazila[]
+  id         Int      @id @default(autoincrement())
+  divisionId Int      @map("division_id")
+  nameBn     String   @map("name_bn")
+  nameEn     String   @map("name_en")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  division      Division   @relation(fields: [divisionId], references: [id])
+  upazilas      Upazilla[]
+  parents       Parent[]
+  healthWorkers HealthWorker[]
+  children      Child[]
 
   @@map("districts")
 }
 
-model Upazila {
+model Upazilla {
   id         Int      @id @default(autoincrement())
   districtId Int      @map("district_id")
-  nameEn     String   @map("name_en")
   nameBn     String   @map("name_bn")
+  nameEn     String   @map("name_en")
   isUrban    Boolean  @default(false) @map("is_urban")
-  district   District @relation(fields: [districtId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  district      District       @relation(fields: [districtId], references: [id])
+  parents       Parent[]
+  healthWorkers HealthWorker[]
+  children      Child[]
 
   @@map("upazilas")
 }
 
-model Child {
-  id             Int           @id @default(autoincrement())
-  parentId       Int           @map("parent_id")
-  name           String
-  dateOfBirth    DateTime      @map("date_of_birth") @db.Date
-  gender         Gender        @default(male)
-  bloodGroup     String?       @map("blood_group")
-  birthWeightKg  Decimal?      @map("birth_weight_kg") @db.Decimal(5, 2)
-  birthHeightCm  Decimal?      @map("birth_height_cm") @db.Decimal(5, 2)
-  journeyType    JourneyType   @default(postnatal) @map("journey_type")
-  photoUrl       String?       @map("photo_url")
-  createdAt      DateTime      @default(now()) @map("created_at")
+// ── User Management ──────────────────────────────────────────────────────────
 
-  parent             User                @relation(fields: [parentId], references: [id], onDelete: Cascade)
-  feedingLogs        FeedingLog[]
-  sleepLogs          SleepLog[]
-  growthRecords      GrowthRecord[]
-  vaccinationRecords VaccinationRecord[]
-  milestoneRecords   MilestoneRecord[]
-  careLogs           CareLog[]
-  aiQueries          AiQuery[]
+model User {
+  id         Int      @id @default(autoincrement())
+  phone      String   @unique
+  fullNameBn String   @map("full_name_bn")
+  fullNameEn String?  @map("full_name_en")
+  password   String
+  role       UserRole
+  onboarded  Boolean  @default(false)
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  parent             Parent?
+  healthWorker       HealthWorker?
+  growthMeasurements GrowthMeasurement[]
+  illnessRecords     IllnessRecord[]
+
+  @@map("users")
+}
+
+model Parent {
+  id                Int       @id @default(autoincrement())
+  userId            Int       @unique @map("user_id")
+  isPregnant        Boolean   @default(false) @map("is_pregnant")
+  dateOfBirth       DateTime? @map("date_of_birth")
+  pregnancyDuration Int?      @map("pregnancy_duration")
+  weight            Float?
+  upazillaId        Int       @map("upazilla_id")
+  districtId        Int       @map("district_id")
+  divisionId        Int       @map("division_id")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  user     User     @relation(fields: [userId], references: [id])
+  upazilla Upazilla @relation(fields: [upazillaId], references: [id])
+  district District @relation(fields: [districtId], references: [id])
+  division Division @relation(fields: [divisionId], references: [id])
+  children         Child[]
+  healthConditions ParentHealthCondition[]
+
+  @@map("parents")
+}
+
+model ParentHealthCondition {
+  id          Int      @id @default(autoincrement())
+  parentId    Int      @map("parent_id")
+  name        String
+  description String?  @db.Text
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  parent Parent @relation(fields: [parentId], references: [id])
+
+  @@map("parent_health_conditions")
+}
+
+model HealthWorker {
+  id         Int      @id @default(autoincrement())
+  userId     Int      @unique @map("user_id")
+  upazillaId Int      @map("upazilla_id")
+  districtId Int      @map("district_id")
+  divisionId Int      @map("division_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  user     User     @relation(fields: [userId], references: [id])
+  upazilla Upazilla @relation(fields: [upazillaId], references: [id])
+  district District @relation(fields: [districtId], references: [id])
+  division Division @relation(fields: [divisionId], references: [id])
+
+  @@map("health_workers")
+}
+
+// ── Child & Health Tracking ──────────────────────────────────────────────────
+
+model Child {
+  id                     Int       @id @default(autoincrement())
+  parentId               Int       @map("parent_id")
+  fullNameBn             String    @map("full_name_bn")
+  fullNameEn             String?   @map("full_name_en")
+  gender                 String
+  expectedDeliveryDate   DateTime? @map("expected_delivery_date")
+  dateOfBirth            DateTime? @map("date_of_birth")
+  bloodGroup             String?   @map("blood_group")
+  birthLocation          String?   @map("birth_location")
+  motherAgeAtEdd         Int?      @map("mother_age_at_edd")
+  pregnancyComplications String?   @db.Text @map("pregnancy_complications")
+  isBreastfed            Boolean   @default(false) @map("is_breastfed")
+  birthComplications     String?   @db.Text @map("birth_complications")
+  upazillaId             Int       @map("upazilla_id")
+  districtId             Int       @map("district_id")
+  divisionId             Int       @map("division_id")
+  createdAt              DateTime  @default(now()) @map("created_at")
+  updatedAt              DateTime  @updatedAt @map("updated_at")
+
+  parent             Parent    @relation(fields: [parentId], references: [id])
+  upazilla           Upazilla  @relation(fields: [upazillaId], references: [id])
+  district           District  @relation(fields: [districtId], references: [id])
+  division           Division  @relation(fields: [divisionId], references: [id])
+  growthMeasurements GrowthMeasurement[]
+  illnessRecords     IllnessRecord[]
+  vaccinations       ChildVaccination[]
 
   @@map("children")
 }
 
-enum Gender {
-  male
-  female
-  other
+model GrowthMeasurement {
+  id         Int      @id @default(autoincrement())
+  childId    Int      @map("child_id")
+  measuredBy Int      @map("measured_by")
+  measuredAt DateTime @map("measured_at")
+  ageDays    Int      @map("age_days")
+  weightKg   Float    @map("weight_kg")
+  heightCm   Float    @map("height_cm")
+  notes      String?  @db.Text
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  child          Child @relation(fields: [childId], references: [id])
+  measuredByUser User  @relation(fields: [measuredBy], references: [id])
+
+  @@map("growth_measurements")
 }
 
-enum JourneyType {
-  prenatal
-  postnatal
+model IllnessRecord {
+  id             Int       @id @default(autoincrement())
+  childId        Int       @map("child_id")
+  recordedBy     Int       @map("recorded_by")
+  recordedAt     DateTime  @map("recorded_at")
+  disease        String
+  symptoms       String?   @db.Text
+  treatmentGiven String?   @db.Text @map("treatment_given")
+  doctorName     String?   @map("doctor_name")
+  facilityName   String?   @map("facility_name")
+  resolved       Boolean   @default(false)
+  resolvedDate   DateTime? @map("resolved_date")
+  notes          String?   @db.Text
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  child          Child @relation(fields: [childId], references: [id])
+  recordedByUser User  @relation(fields: [recordedBy], references: [id])
+
+  @@map("illness_records")
 }
 
-model FeedingLog {
-  id              Int          @id @default(autoincrement())
-  childId         Int          @map("child_id")
-  type            FeedingType
-  durationMinutes Int?         @map("duration_minutes")
-  amountMl        Decimal?     @map("amount_ml") @db.Decimal(6, 2)
-  side            FeedingSide?
-  foodItem        String?      @map("food_item")
-  notes           String?      @db.Text
-  loggedAt        DateTime     @map("logged_at")
-  createdAt       DateTime     @default(now()) @map("created_at")
+// Vaccine master list — required for ChildVaccination.vaccineId FK.
+// Seed this with the Bangladesh EPI schedule (BCG, OPV, Pentavalent, PCV, IPV, MR, Vitamin A).
+model Vaccine {
+  id        Int      @id @default(autoincrement())
+  nameEn    String   @map("name_en")
+  nameBn    String   @map("name_bn")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
-  child Child @relation(fields: [childId], references: [id], onDelete: Cascade)
+  // Relation to its specific doses
+  doses     VaccineDose[]
 
-  @@map("feeding_logs")
+  @@map("vaccines")
 }
 
-enum FeedingType {
-  breastfeed
-  bottle
-  solid
+model VaccineDose {
+  id              Int      @id @default(autoincrement())
+  vaccineId       Int      @map("vaccine_id")
+  doseNumber      Int      @map("dose_number") // For sorting and dependency logic (1, 2, 3)
+  nameEn          String   @map("name_en")     // e.g., "Penta 1"
+  nameBn          String   @map("name_bn")     // e.g., "পেন্টা ১"
+  eligibleAgeDays Int      @map("eligible_age_days") // Age in days required for automatic scheduling
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  vaccine      Vaccine            @relation(fields: [vaccineId], references: [id])
+  vaccinations ChildVaccination[]
+
+  @@map("vaccine_doses")
 }
 
-enum FeedingSide {
-  left
-  right
-  both
-}
-
-model SleepLog {
-  id              Int           @id @default(autoincrement())
-  childId         Int           @map("child_id")
-  sleepStart      DateTime      @map("sleep_start")
-  sleepEnd        DateTime?     @map("sleep_end")
-  durationMinutes Int?          @map("duration_minutes")
-  quality         SleepQuality? @default(good)
-  notes           String?       @db.Text
-  createdAt       DateTime      @default(now()) @map("created_at")
-
-  child Child @relation(fields: [childId], references: [id], onDelete: Cascade)
-
-  @@map("sleep_logs")
-}
-
-enum SleepQuality {
-  poor
-  fair
-  good
-  excellent
-}
-
-model GrowthRecord {
-  id                   Int      @id @default(autoincrement())
-  childId              Int      @map("child_id")
-  weightKg             Decimal? @map("weight_kg") @db.Decimal(5, 2)
-  heightCm             Decimal? @map("height_cm") @db.Decimal(5, 2)
-  headCircumferenceCm  Decimal? @map("head_circumference_cm") @db.Decimal(5, 2)
-  measuredAt           DateTime @map("measured_at") @db.Date
-  recordedBy           Int?     @map("recorded_by")
-  notes                String?  @db.Text
-  createdAt            DateTime @default(now()) @map("created_at")
-
-  child    Child  @relation(fields: [childId], references: [id], onDelete: Cascade)
-  recorder User?  @relation("RecordedBy", fields: [recordedBy], references: [id], onDelete: SetNull)
-
-  @@map("growth_records")
-}
-
-model Vaccination {
-  id                  Int                 @id @default(autoincrement())
-  name                String
-  shortName           String?             @map("short_name")
-  recommendedAgeWeeks Int?                @map("recommended_age_weeks")
-  description         String?             @db.Text
-  isMandatory         Boolean             @default(true) @map("is_mandatory")
-  dosesRequired       Int                 @default(1) @map("doses_required")
-  records             VaccinationRecord[]
-
-  @@map("vaccinations")
-}
-
-model VaccinationRecord {
-  id              Int               @id @default(autoincrement())
-  childId         Int               @map("child_id")
-  vaccinationId   Int               @map("vaccination_id")
-  status          VaccinationStatus @default(pending)
-  doseNumber      Int               @default(1) @map("dose_number")
-  administeredAt  DateTime?         @map("administered_at") @db.Date
-  nextDueAt       DateTime?         @map("next_due_at") @db.Date
-  administeredBy  Int?              @map("administered_by")
-  notes           String?           @db.Text
-  createdAt       DateTime          @default(now()) @map("created_at")
-
-  child        Child       @relation(fields: [childId], references: [id], onDelete: Cascade)
-  vaccination  Vaccination @relation(fields: [vaccinationId], references: [id])
-  admin        User?       @relation("AdministeredBy", fields: [administeredBy], references: [id], onDelete: SetNull)
-
-  @@map("vaccination_records")
-}
-
-enum VaccinationStatus {
-  pending
-  done
-  skipped
-  overdue
-}
-
-model Milestone {
-  id          Int               @id @default(autoincrement())
-  label       String
-  ageMonths   Int               @map("age_months")
-  category    MilestoneCategory @default(motor)
-  description String?           @db.Text
-  icon        String?
-  records     MilestoneRecord[]
-
-  @@map("milestones")
-}
-
-enum MilestoneCategory {
-  motor
-  cognitive
-  social
-  language
-}
-
-model MilestoneRecord {
-  id          Int      @id @default(autoincrement())
-  childId     Int      @map("child_id")
-  milestoneId Int      @map("milestone_id")
-  achieved    Boolean  @default(false)
-  achievedAt  DateTime? @map("achieved_at") @db.Date
-  notes       String?   @db.Text
-  createdAt   DateTime  @default(now()) @map("created_at")
-
-  child     Child     @relation(fields: [childId], references: [id], onDelete: Cascade)
-  milestone Milestone @relation(fields: [milestoneId], references: [id])
-
-  @@map("milestone_records")
-}
-
-model CareLog {
-  id            Int      @id @default(autoincrement())
-  childId       Int      @map("child_id")
-  label         String
-  done          Boolean  @default(false)
-  scheduledTime String?  @map("scheduled_time")
-  completedAt   DateTime? @map("completed_at")
-  logDate       DateTime  @map("log_date") @db.Date
+model ChildVaccination {
+  id            Int       @id @default(autoincrement())
+  childId       Int       @map("child_id")
+  vaccineDoseId Int       @map("vaccine_dose_id") // Swapped vaccineId out for vaccineDoseId
+  scheduledDate DateTime  @map("scheduled_date")
+  givenDate     DateTime? @map("given_date")
+  facilityName  String?   @map("facility_name")
+  isGiven       Boolean   @default(false) @map("is_given")
   createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
 
-  child Child @relation(fields: [childId], references: [id], onDelete: Cascade)
+  // Relations
+  child       Child       @relation(fields: [childId], references: [id])
+  vaccineDose VaccineDose @relation(fields: [vaccineDoseId], references: [id])
 
-  @@map("care_logs")
-}
-
-model AiQuery {
-  id           Int           @id @default(autoincrement())
-  userId       Int           @map("user_id")
-  childId      Int?          @map("child_id")
-  queryText    String        @map("query_text") @db.Text
-  responseText String?       @map("response_text") @db.Text
-  queryType    AiQueryType   @default(general) @map("query_type")
-  createdAt    DateTime      @default(now()) @map("created_at")
-
-  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  child Child? @relation(fields: [childId], references: [id], onDelete: SetNull)
-
-  @@map("ai_queries")
-}
-
-enum AiQueryType {
-  general
-  risk_check
-  milestone
-  vaccination
-  nutrition
+  @@map("child_vaccinations")
 }

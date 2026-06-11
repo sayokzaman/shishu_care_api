@@ -7,7 +7,11 @@
         "prisma:generate": "prisma generate",
         "prisma:migrate": "prisma migrate dev",
         "prisma:studio": "prisma studio",
-        "db:setup": "node ./scripts/setup-database.js"
+        "db:setup": "node ./scripts/setup-database.js",
+        "db:seed": "node database/seed.js"
+    },
+    "prisma": {
+        "seed": "node database/seed.js"
     },
     "dependencies": {
         "@prisma/client": "^6.19.3",
@@ -20,7 +24,8 @@
         "http-errors": "~1.6.3",
         "jsonwebtoken": "^9.0.0",
         "morgan": "~1.9.1",
-        "mysql2": "^3.14.3"
+        "mysql2": "^3.14.3",
+        "zod": "^4.4.3"
     },
     "devDependencies": {
         "@types/node": "^25.9.1",

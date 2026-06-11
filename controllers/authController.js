@@ -7,16 +7,7 @@ var JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d'
 
 exports.register = async function (req, res, next) {
     try {
-        var fullNameEn = req.body.fullNameEn || req.body.name
-        var fullNameBn = req.body.fullNameBn || null
-        var phone = req.body.phone
-        var email = req.body.email || null
-        var password = req.body.password
-        var role = req.body.role === 'health_worker' ? 'health_worker' : 'parent'
-
-        if (!fullNameEn || !phone || !password) {
-            return res.status(400).json({ message: 'fullNameEn, phone and password are required' })
-        }
+        var { phone, fullNameBn, fullNameEn, password, role, upazillaId, districtId, divisionId, dateOfBirth } = req.body
 
         var client = prismaWrapper && prismaWrapper._getClient()
         if (!client) return res.status(500).json({ message: 'Prisma client is not available' })
@@ -28,13 +19,33 @@ exports.register = async function (req, res, next) {
 
         var hash = await bcrypt.hash(password, 10)
 
-        var user = await client.user.create({
-            data: { fullNameEn: fullNameEn, fullNameBn: fullNameBn, phone: phone, email: email, password: hash, role: role }
+        var locationIds = { upazillaId, districtId, divisionId }
+
+        var user = await client.$transaction(async function (tx) {
+            var newUser = await tx.user.create({
+                data: { phone, fullNameBn, fullNameEn: fullNameEn || null, password: hash, role }
+            })
+
+            if (role === 'parent') {
+                await tx.parent.create({
+                    data: {
+                        userId: newUser.id,
+                        ...locationIds,
+                        dateOfBirth: dateOfBirth || null
+                    }
+                })
+            } else if (role === 'health_worker') {
+                await tx.healthWorker.create({
+                    data: { userId: newUser.id, ...locationIds }
+                })
+            }
+
+            return newUser
         })
 
         var token = jwt.sign({ sub: user.id }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN })
 
-        res.status(201).json({ token: token, user: _publicUser(user) })
+        res.status(201).json({ token: token, user: { id: user.id, fullNameBn: user.fullNameBn, fullNameEn: user.fullNameEn, phone: user.phone, role: user.role } })
     } catch (err) {
         next(err)
     }
@@ -42,12 +53,7 @@ exports.register = async function (req, res, next) {
 
 exports.login = async function (req, res, next) {
     try {
-        var phone = req.body.phone
-        var password = req.body.password
-
-        if (!phone || !password) {
-            return res.status(400).json({ message: 'phone and password are required' })
-        }
+        var { phone, password } = req.body
 
         var client = prismaWrapper && prismaWrapper._getClient()
         if (!client) return res.status(500).json({ message: 'Prisma client is not available' })
@@ -62,7 +68,7 @@ exports.login = async function (req, res, next) {
 
         var token = jwt.sign({ sub: user.id }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN })
 
-        res.json({ token: token, user: _publicUser(user) })
+        res.json({ token: token, user: { id: user.id, fullNameBn: user.fullNameBn, fullNameEn: user.fullNameEn, phone: user.phone, role: user.role } })
     } catch (err) {
         next(err)
     }

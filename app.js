@@ -9,6 +9,8 @@ var indexRouter = require('./routes/index')
 var usersRouter = require('./routes/users')
 var authRouter = require('./routes/auth')
 var chatbotRouter = require('./routes/chatbot')
+var locationsRouter = require('./routes/locations')
+var onboardingRouter = require('./routes/onboarding')
 
 var app = express()
 
@@ -30,6 +32,8 @@ app.use('/api', indexRouter)
 app.use('/api/users', usersRouter)
 app.use('/api/auth', authRouter)
 app.use('/api/chatbot', chatbotRouter)
+app.use('/api/locations', locationsRouter)
+app.use('/api/onboarding', onboardingRouter)
 
 // catch 404 and forward to error handler
 app.use(function (req, res, next) {

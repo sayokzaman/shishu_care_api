@@ -1,9 +1,10 @@
 var express = require('express')
 var router = express.Router()
 var authCtrl = require('../controllers/authController')
-var auth = require('../middleware/authMiddleware')
+var validate = require('../middleware/validate')
+var { registerSchema, loginSchema } = require('../validators/authValidator')
 
-router.post('/register', authCtrl.register)
-router.post('/login', authCtrl.login)
+router.post('/register', validate(registerSchema), authCtrl.register)
+router.post('/login', validate(loginSchema), authCtrl.login)
 
 module.exports = router
