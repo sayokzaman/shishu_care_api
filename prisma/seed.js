@@ -19,17 +19,21 @@ async function main() {
   console.log('🌱 Seeding ShishuCare database...\n');
 
   // ── Vaccinations ──────────────────────────────────────────
-  const vaccinations = await Promise.all([
-    prisma.vaccination.upsert({ where: { id: 1 }, update: {}, create: { name: 'BCG (Bacillus Calmette-Guérin)', shortName: 'BCG', recommendedAgeWeeks: 0, description: 'Protection against tuberculosis. Given at birth.', isMandatory: true, dosesRequired: 1 } }),
-    prisma.vaccination.upsert({ where: { id: 2 }, update: {}, create: { name: 'Polio OPV (Oral Polio Vaccine)', shortName: 'OPV', recommendedAgeWeeks: 0, description: 'Protection against poliomyelitis. First dose at birth.', isMandatory: true, dosesRequired: 4 } }),
-    prisma.vaccination.upsert({ where: { id: 3 }, update: {}, create: { name: 'Pentavalent Vaccine', shortName: 'Penta', recommendedAgeWeeks: 6, description: 'DPT + HepB + Hib combination vaccine.', isMandatory: true, dosesRequired: 3 } }),
-    prisma.vaccination.upsert({ where: { id: 4 }, update: {}, create: { name: 'Pneumococcal Conjugate Vaccine', shortName: 'PCV', recommendedAgeWeeks: 6, description: 'Protection against pneumococcal disease.', isMandatory: true, dosesRequired: 3 } }),
-    prisma.vaccination.upsert({ where: { id: 5 }, update: {}, create: { name: 'Measles & Rubella Vaccine', shortName: 'MR', recommendedAgeWeeks: 36, description: 'Protection against measles and rubella. At 9 months.', isMandatory: true, dosesRequired: 2 } }),
-    prisma.vaccination.upsert({ where: { id: 6 }, update: {}, create: { name: 'MMR Vaccine', shortName: 'MMR', recommendedAgeWeeks: 52, description: 'Measles, Mumps, Rubella. At 12–15 months.', isMandatory: true, dosesRequired: 1 } }),
-    prisma.vaccination.upsert({ where: { id: 7 }, update: {}, create: { name: 'Hepatitis B', shortName: 'HepB', recommendedAgeWeeks: 0, description: 'Given at birth for hepatitis B protection.', isMandatory: true, dosesRequired: 3 } }),
-    prisma.vaccination.upsert({ where: { id: 8 }, update: {}, create: { name: 'Rotavirus Vaccine', shortName: 'RV', recommendedAgeWeeks: 6, description: 'Protection against rotavirus diarrhea.', isMandatory: true, dosesRequired: 2 } }),
-  ]);
-  console.log(`✅ ${vaccinations.length} vaccinations seeded`);
+  await prisma.vaccinationRecord.deleteMany({});
+  await prisma.vaccination.deleteMany({});
+  const vaccinations = await prisma.vaccination.createMany({
+    data: [
+      { name: 'BCG (Bacillus Calmette-Guérin)', shortName: 'BCG', recommendedAgeWeeks: 0, description: 'Protection against tuberculosis. Given at birth.', isMandatory: true, dosesRequired: 1 },
+      { name: 'Polio OPV (Oral Polio Vaccine)', shortName: 'OPV', recommendedAgeWeeks: 0, description: 'Protection against poliomyelitis. First dose at birth.', isMandatory: true, dosesRequired: 4 },
+      { name: 'Pentavalent Vaccine', shortName: 'Penta', recommendedAgeWeeks: 6, description: 'DPT + HepB + Hib combination vaccine.', isMandatory: true, dosesRequired: 3 },
+      { name: 'Pneumococcal Conjugate Vaccine', shortName: 'PCV', recommendedAgeWeeks: 6, description: 'Protection against pneumococcal disease.', isMandatory: true, dosesRequired: 3 },
+      { name: 'Measles & Rubella Vaccine', shortName: 'MR', recommendedAgeWeeks: 36, description: 'Protection against measles and rubella. At 9 months.', isMandatory: true, dosesRequired: 2 },
+      { name: 'MMR Vaccine', shortName: 'MMR', recommendedAgeWeeks: 52, description: 'Measles, Mumps, Rubella. At 12–15 months.', isMandatory: true, dosesRequired: 1 },
+      { name: 'Hepatitis B', shortName: 'HepB', recommendedAgeWeeks: 0, description: 'Given at birth for hepatitis B protection.', isMandatory: true, dosesRequired: 3 },
+      { name: 'Rotavirus Vaccine', shortName: 'RV', recommendedAgeWeeks: 6, description: 'Protection against rotavirus diarrhea.', isMandatory: true, dosesRequired: 2 },
+    ],
+  });
+  console.log(`✅ ${vaccinations.count} vaccinations seeded`);
 
   // ── Milestones ────────────────────────────────────────────
   const milestoneData = [
