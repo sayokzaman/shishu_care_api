@@ -34,7 +34,7 @@ const epiSchedule = [
     doses: [
       { doseNumber: 1, nameEn: 'PCV 1', nameBn: 'পিসিভি ১', eligibleAgeDays: 42 },
       { doseNumber: 2, nameEn: 'PCV 2', nameBn: 'পিসিভি ২', eligibleAgeDays: 70 },
-      { doseNumber: 3, nameEn: 'PCV Booster', nameBn: 'পিসিভি বুস্টার', eligibleAgeDays: 365 },
+      { doseNumber: 3, nameEn: 'PCV 3', nameBn: 'পিসিভি ৩', eligibleAgeDays: 98 },
     ],
   },
   {
@@ -50,6 +50,13 @@ const epiSchedule = [
     doses: [
       { doseNumber: 1, nameEn: 'MR 1', nameBn: 'এমআর ১', eligibleAgeDays: 274 },
       { doseNumber: 2, nameEn: 'MR 2', nameBn: 'এমআর ২', eligibleAgeDays: 456 },
+    ],
+  },
+  {
+    nameEn: 'JE',
+    nameBn: 'জেই',
+    doses: [
+      { doseNumber: 1, nameEn: 'JE', nameBn: 'জেই', eligibleAgeDays: 456 },
     ],
   },
   {

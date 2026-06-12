@@ -12,6 +12,12 @@ var chatbotRouter = require('./routes/chatbot')
 var locationsRouter = require('./routes/locations')
 var onboardingRouter = require('./routes/onboarding')
 var mlRouter = require('./routes/ml')
+var feedingRouter = require('./routes/feeding')
+var vaccinationsRouter = require('./routes/vaccinations')
+var sleepRouter = require('./routes/sleep')
+var activitiesRouter = require('./routes/activities')
+var growthRouter = require('./routes/growth')
+var milestonesRouter = require('./routes/milestones')
 
 var app = express()
 
@@ -36,6 +42,12 @@ app.use('/api/chatbot', chatbotRouter)
 app.use('/api/locations', locationsRouter)
 app.use('/api/onboarding', onboardingRouter)
 app.use('/api/ml', mlRouter)
+app.use('/api/feeding', feedingRouter)
+app.use('/api/vaccinations', vaccinationsRouter)
+app.use('/api/sleep', sleepRouter)
+app.use('/api/activities', activitiesRouter)
+app.use('/api/growth', growthRouter)
+app.use('/api/milestones', milestonesRouter)
 
 // catch 404 and forward to error handler
 app.use(function (req, res, next) {

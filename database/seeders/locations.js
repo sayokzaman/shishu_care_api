@@ -930,6 +930,9 @@ async function seedLocations(prisma) {
   console.log('Seeding Bangladesh administrative locations...')
 
   // Delete in FK dependency order (most dependent first)
+  await prisma.childMilestone.deleteMany()
+  await prisma.sleepSession.deleteMany()
+  await prisma.activitySession.deleteMany()
   await prisma.childVaccination.deleteMany()
   await prisma.growthMeasurement.deleteMany()
   await prisma.illnessRecord.deleteMany()

@@ -7,268 +7,491 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum UserRole {
+  admin
+  parent
+  health_worker
+}
+
+enum FeedingMethod {
+  breastfed
+  bottle_breast_milk
+  bottle_formula
+  spoon_fed
+  cup_fed
+  self_fed
+  tube_fed
+  mixed
+}
+
+enum BreastSide {
+  left
+  right
+  both
+}
+
+enum FeedingDifficulty {
+  easy
+  moderate
+  difficult
+  refused
+}
+
+enum FoodConsistency {
+  liquid
+  puree
+  mashed
+  minced
+  soft_pieces
+  regular
+}
+
+enum SleepType {
+  nap
+  night
+  rest
+}
+
+enum SleepQuality {
+  good
+  fair
+  poor
+}
+
+enum ActivityType {
+  tummy_time
+  play
+  bath
+  outdoor
+  reading
+  massage
+  music
+  other
+}
+
+enum MilestoneDomain {
+  motor
+  language
+  social
+  cognitive
+  health
+}
+
+enum FoodCategory {
+  breast_milk
+  formula
+  water
+  juice
+  grains_cereals
+  legumes
+  fish
+  meat_poultry
+  egg
+  vegetables
+  fruits
+  dairy
+  mixed_meal
+  commercial_baby_food
+  snack
+  other
+}
+
+// ── Administrative Location Hierarchy ────────────────────────────────────────
+
 model Division {
-  id        Int        @id @default(autoincrement())
-  nameEn    String     @map("name_en")
-  nameBn    String     @map("name_bn")
-  districts District[]
+  id        Int      @id @default(autoincrement())
+  nameBn    String   @map("name_bn")
+  nameEn    String   @map("name_en")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  districts     District[]
+  parents       Parent[]
+  healthWorkers HealthWorker[]
+  children      Child[]
 
   @@map("divisions")
 }
 
 model District {
-  id         Int        @id @default(autoincrement())
-  divisionId Int        @map("division_id")
-  nameEn     String     @map("name_en")
-  nameBn     String     @map("name_bn")
-  division   Division   @relation(fields: [divisionId], references: [id], onDelete: Cascade)
-  upazilas   Upazilla[]
+  id         Int      @id @default(autoincrement())
+  divisionId Int      @map("division_id")
+  nameBn     String   @map("name_bn")
+  nameEn     String   @map("name_en")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
 
-  @@index([divisionId], map: "districts_division_id_fkey")
+  division      Division   @relation(fields: [divisionId], references: [id])
+  upazilas      Upazilla[]
+  parents       Parent[]
+  healthWorkers HealthWorker[]
+  children      Child[]
+
   @@map("districts")
 }
 
 model Upazilla {
   id         Int      @id @default(autoincrement())
   districtId Int      @map("district_id")
-  nameEn     String   @map("name_en")
   nameBn     String   @map("name_bn")
+  nameEn     String   @map("name_en")
   isUrban    Boolean  @default(false) @map("is_urban")
-  district   District @relation(fields: [districtId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
 
-  @@index([districtId], map: "upazilas_district_id_fkey")
+  district      District       @relation(fields: [districtId], references: [id])
+  parents       Parent[]
+  healthWorkers HealthWorker[]
+  children      Child[]
+
   @@map("upazilas")
 }
 
+// ── User Management ──────────────────────────────────────────────────────────
+
 model User {
-  id                  Int                   @id @default(autoincrement())
-  email               String?               @unique
-  password            String
-  createdAt           DateTime              @default(now()) @map("created_at")
-  updatedAt           DateTime              @updatedAt @map("updated_at")
-  avatar_url          String?
-  fullNameBn          String?               @map("full_name_bn")
-  fullNameEn          String?               @map("full_name_en")
-  phone               String                @unique
-  role                users_role            @default(parent)
-  ai_queries          ai_queries[]
-  children            Child[]
-  growth_records      growth_records[]
-  vaccination_records vaccination_records[]
+  id         Int      @id @default(autoincrement())
+  phone      String   @unique
+  fullNameBn String   @map("full_name_bn")
+  fullNameEn String?  @map("full_name_en")
+  password   String
+  role       UserRole
+  onboarded  Boolean  @default(false)
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  parent             Parent?
+  healthWorker       HealthWorker?
+  growthMeasurements GrowthMeasurement[]
+  illnessRecords     IllnessRecord[]
+  feedingSessions    FeedingSession[]
+  sleepSessions      SleepSession[]
+  activitySessions   ActivitySession[]
+  milestoneChecks    ChildMilestone[]   @relation("MilestoneCheckedBy")
 
   @@map("users")
 }
 
-model Child {
-  id                  Int                   @id @default(autoincrement())
-  parentId            Int                   @map("parent_id")
-  name                String
-  dateOfBirth         DateTime              @map("date_of_birth") @db.Date
-  gender              children_gender       @default(male)
-  bloodGroup          String?               @map("blood_group")
-  birth_weight_kg     Decimal?              @db.Decimal(5, 2)
-  birth_height_cm     Decimal?              @db.Decimal(5, 2)
-  journey_type        children_journey_type @default(postnatal)
-  photo_url           String?
-  createdAt           DateTime              @default(now()) @map("created_at")
-  ai_queries          ai_queries[]
-  care_logs           care_logs[]
-  parent              User                  @relation(fields: [parentId], references: [id], onDelete: Cascade)
-  feeding_logs        feeding_logs[]
-  growth_records      growth_records[]
-  milestone_records   milestone_records[]
-  sleep_logs          sleep_logs[]
-  vaccination_records vaccination_records[]
+model Parent {
+  id                Int       @id @default(autoincrement())
+  userId            Int       @unique @map("user_id")
+  isPregnant        Boolean   @default(false) @map("is_pregnant")
+  dateOfBirth       DateTime? @map("date_of_birth")
+  pregnancyDuration Int?      @map("pregnancy_duration")
+  weight            Float?
+  upazillaId        Int       @map("upazilla_id")
+  districtId        Int       @map("district_id")
+  divisionId        Int       @map("division_id")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
 
-  @@index([parentId], map: "children_parent_id_fkey")
+  user     User     @relation(fields: [userId], references: [id])
+  upazilla Upazilla @relation(fields: [upazillaId], references: [id])
+  district District @relation(fields: [districtId], references: [id])
+  division Division @relation(fields: [divisionId], references: [id])
+  children         Child[]
+  healthConditions ParentHealthCondition[]
+
+  @@map("parents")
+}
+
+model ParentHealthCondition {
+  id          Int      @id @default(autoincrement())
+  parentId    Int      @map("parent_id")
+  name        String
+  description String?  @db.Text
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  parent Parent @relation(fields: [parentId], references: [id])
+
+  @@map("parent_health_conditions")
+}
+
+model HealthWorker {
+  id         Int      @id @default(autoincrement())
+  userId     Int      @unique @map("user_id")
+  upazillaId Int      @map("upazilla_id")
+  districtId Int      @map("district_id")
+  divisionId Int      @map("division_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  user     User     @relation(fields: [userId], references: [id])
+  upazilla Upazilla @relation(fields: [upazillaId], references: [id])
+  district District @relation(fields: [districtId], references: [id])
+  division Division @relation(fields: [divisionId], references: [id])
+
+  @@map("health_workers")
+}
+
+// ── Child & Health Tracking ──────────────────────────────────────────────────
+
+model Child {
+  id                     Int       @id @default(autoincrement())
+  parentId               Int       @map("parent_id")
+  fullNameBn             String    @map("full_name_bn")
+  fullNameEn             String?   @map("full_name_en")
+  gender                 String
+  expectedDeliveryDate   DateTime? @map("expected_delivery_date")
+  dateOfBirth            DateTime? @map("date_of_birth")
+  bloodGroup             String?   @map("blood_group")
+  birthLocation          String?   @map("birth_location")
+  motherAgeAtEdd         Int?      @map("mother_age_at_edd")
+  pregnancyComplications String?   @db.Text @map("pregnancy_complications")
+  isBreastfed            Boolean   @default(false) @map("is_breastfed")
+  birthComplications     String?   @db.Text @map("birth_complications")
+  upazillaId             Int       @map("upazilla_id")
+  districtId             Int       @map("district_id")
+  divisionId             Int       @map("division_id")
+  createdAt              DateTime  @default(now()) @map("created_at")
+  updatedAt              DateTime  @updatedAt @map("updated_at")
+
+  parent             Parent    @relation(fields: [parentId], references: [id])
+  upazilla           Upazilla  @relation(fields: [upazillaId], references: [id])
+  district           District  @relation(fields: [districtId], references: [id])
+  division           Division  @relation(fields: [divisionId], references: [id])
+  growthMeasurements GrowthMeasurement[]
+  illnessRecords     IllnessRecord[]
+  vaccinations       ChildVaccination[]
+  feedingSessions    FeedingSession[]
+  sleepSessions      SleepSession[]
+  activitySessions   ActivitySession[]
+  childMilestones    ChildMilestone[]
+
   @@map("children")
 }
 
-model ai_queries {
-  id            Int                   @id @default(autoincrement())
-  user_id       Int
-  child_id      Int?
-  query_text    String                @db.Text
-  response_text String?               @db.Text
-  query_type    ai_queries_query_type @default(general)
-  created_at    DateTime              @default(now())
-  children      Child?                @relation(fields: [child_id], references: [id])
-  users         User                  @relation(fields: [user_id], references: [id], onDelete: Cascade)
-
-  @@index([child_id], map: "ai_queries_child_id_fkey")
-  @@index([user_id], map: "ai_queries_user_id_fkey")
-}
-
-model care_logs {
-  id             Int       @id @default(autoincrement())
-  child_id       Int
-  label          String
-  done           Boolean   @default(false)
-  scheduled_time String?
-  completed_at   DateTime?
-  log_date       DateTime  @db.Date
-  created_at     DateTime  @default(now())
-  children       Child     @relation(fields: [child_id], references: [id], onDelete: Cascade)
-
-  @@index([child_id], map: "care_logs_child_id_fkey")
-}
-
-model feeding_logs {
-  id               Int                @id @default(autoincrement())
-  child_id         Int
-  type             feeding_logs_type
-  duration_minutes Int?
-  amount_ml        Decimal?           @db.Decimal(6, 2)
-  side             feeding_logs_side?
-  food_item        String?
-  notes            String?            @db.Text
-  logged_at        DateTime
-  created_at       DateTime           @default(now())
-  children         Child              @relation(fields: [child_id], references: [id], onDelete: Cascade)
-
-  @@index([child_id], map: "feeding_logs_child_id_fkey")
-}
-
-model growth_records {
-  id                    Int      @id @default(autoincrement())
-  child_id              Int
-  weight_kg             Decimal? @db.Decimal(5, 2)
-  height_cm             Decimal? @db.Decimal(5, 2)
-  head_circumference_cm Decimal? @db.Decimal(5, 2)
-  measured_at           DateTime @db.Date
-  recorded_by           Int?
+model GrowthMeasurement {
+  id         Int      @id @default(autoincrement())
+  childId    Int      @map("child_id")
+  measuredBy Int      @map("measured_by")
+  measuredAt DateTime @map("measured_at")
+  ageDays    Int      @map("age_days")
+  weightKg              Float    @map("weight_kg")
+  heightCm              Float    @map("height_cm")
+  headCircumferenceCm   Float?   @map("head_circumference_cm")
   notes                 String?  @db.Text
-  created_at            DateTime @default(now())
-  children              Child    @relation(fields: [child_id], references: [id], onDelete: Cascade)
-  users                 User?    @relation(fields: [recorded_by], references: [id])
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
 
-  @@index([child_id], map: "growth_records_child_id_fkey")
-  @@index([recorded_by], map: "growth_records_recorded_by_fkey")
+  child          Child @relation(fields: [childId], references: [id])
+  measuredByUser User  @relation(fields: [measuredBy], references: [id])
+
+  @@map("growth_measurements")
 }
 
-model milestone_records {
-  id           Int        @id @default(autoincrement())
-  child_id     Int
-  milestone_id Int
-  achieved     Boolean    @default(false)
-  achieved_at  DateTime?  @db.Date
-  notes        String?    @db.Text
-  created_at   DateTime   @default(now())
-  children     Child      @relation(fields: [child_id], references: [id], onDelete: Cascade)
-  milestones   milestones @relation(fields: [milestone_id], references: [id])
+model IllnessRecord {
+  id             Int       @id @default(autoincrement())
+  childId        Int       @map("child_id")
+  recordedBy     Int       @map("recorded_by")
+  recordedAt     DateTime  @map("recorded_at")
+  disease        String
+  symptoms       String?   @db.Text
+  treatmentGiven String?   @db.Text @map("treatment_given")
+  doctorName     String?   @map("doctor_name")
+  facilityName   String?   @map("facility_name")
+  resolved       Boolean   @default(false)
+  resolvedDate   DateTime? @map("resolved_date")
+  notes          String?   @db.Text
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
 
-  @@index([child_id], map: "milestone_records_child_id_fkey")
-  @@index([milestone_id], map: "milestone_records_milestone_id_fkey")
+  child          Child @relation(fields: [childId], references: [id])
+  recordedByUser User  @relation(fields: [recordedBy], references: [id])
+
+  @@map("illness_records")
 }
 
-model milestones {
-  id                Int                 @id @default(autoincrement())
-  label             String
-  age_months        Int
-  category          milestones_category @default(motor)
-  description       String?             @db.Text
-  icon              String?
-  milestone_records milestone_records[]
+// Vaccine master list — required for ChildVaccination.vaccineId FK.
+// Seed this with the Bangladesh EPI schedule (BCG, OPV, Pentavalent, PCV, IPV, MR, Vitamin A).
+model Vaccine {
+  id        Int      @id @default(autoincrement())
+  nameEn    String   @map("name_en")
+  nameBn    String   @map("name_bn")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relation to its specific doses
+  doses     VaccineDose[]
+
+  @@map("vaccines")
 }
 
-model sleep_logs {
-  id               Int                 @id @default(autoincrement())
-  child_id         Int
-  sleep_start      DateTime
-  sleep_end        DateTime?
-  duration_minutes Int?
-  quality          sleep_logs_quality? @default(good)
-  notes            String?             @db.Text
-  created_at       DateTime            @default(now())
-  children         Child               @relation(fields: [child_id], references: [id], onDelete: Cascade)
+model VaccineDose {
+  id              Int      @id @default(autoincrement())
+  vaccineId       Int      @map("vaccine_id")
+  doseNumber      Int      @map("dose_number") // For sorting and dependency logic (1, 2, 3)
+  nameEn          String   @map("name_en")     // e.g., "Penta 1"
+  nameBn          String   @map("name_bn")     // e.g., "পেন্টা ১"
+  eligibleAgeDays Int      @map("eligible_age_days") // Age in days required for automatic scheduling
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
 
-  @@index([child_id], map: "sleep_logs_child_id_fkey")
+  // Relations
+  vaccine      Vaccine            @relation(fields: [vaccineId], references: [id])
+  vaccinations ChildVaccination[]
+
+  @@map("vaccine_doses")
 }
 
-model vaccination_records {
-  id              Int                        @id @default(autoincrement())
-  child_id        Int
-  vaccination_id  Int
-  status          vaccination_records_status @default(pending)
-  dose_number     Int                        @default(1)
-  administered_at DateTime?                  @db.Date
-  next_due_at     DateTime?                  @db.Date
-  administered_by Int?
-  notes           String?                    @db.Text
-  created_at      DateTime                   @default(now())
-  users           User?                      @relation(fields: [administered_by], references: [id])
-  children        Child                      @relation(fields: [child_id], references: [id], onDelete: Cascade)
-  vaccinations    vaccinations               @relation(fields: [vaccination_id], references: [id])
+model ChildVaccination {
+  id            Int       @id @default(autoincrement())
+  childId       Int       @map("child_id")
+  vaccineDoseId Int       @map("vaccine_dose_id") // Swapped vaccineId out for vaccineDoseId
+  scheduledDate DateTime  @map("scheduled_date")
+  givenDate     DateTime? @map("given_date")
+  facilityName  String?   @map("facility_name")
+  isGiven       Boolean   @default(false) @map("is_given")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
 
-  @@index([administered_by], map: "vaccination_records_administered_by_fkey")
-  @@index([child_id], map: "vaccination_records_child_id_fkey")
-  @@index([vaccination_id], map: "vaccination_records_vaccination_id_fkey")
+  // Relations
+  child       Child       @relation(fields: [childId], references: [id])
+  vaccineDose VaccineDose @relation(fields: [vaccineDoseId], references: [id])
+
+  @@map("child_vaccinations")
 }
 
-model vaccinations {
-  id                    Int                   @id @default(autoincrement())
-  name                  String
-  short_name            String?
-  recommended_age_weeks Int?
-  description           String?               @db.Text
-  is_mandatory          Boolean               @default(true)
-  doses_required        Int                   @default(1)
-  vaccination_records   vaccination_records[]
+// ── Feeding Tracking ─────────────────────────────────────────────────────────
+
+model FeedingSession {
+  id               Int               @id @default(autoincrement())
+  childId          Int               @map("child_id")
+  loggedBy         Int               @map("logged_by")
+  fedAt            DateTime          @map("fed_at")
+  method           FeedingMethod
+
+  // Breastfeeding-specific
+  breastSide       BreastSide?       @map("breast_side")
+  durationMinutes  Int?              @map("duration_minutes")
+
+  // Bottle / liquid-only sessions (formula or expressed breast milk)
+  amountMl         Float?            @map("amount_ml")
+
+  // Child's state during the feed
+  mood             String?           // free text: happy, fussy, drowsy, crying, sleepy
+  appetite         FeedingDifficulty?
+
+  // Post-feeding flags
+  vomitedAfter     Boolean           @default(false) @map("vomited_after")
+  choked           Boolean           @default(false)
+  allergicReaction Boolean           @default(false) @map("allergic_reaction")
+
+  notes            String?           @db.Text
+  createdAt        DateTime          @default(now()) @map("created_at")
+  updatedAt        DateTime          @updatedAt @map("updated_at")
+
+  child            Child             @relation(fields: [childId], references: [id])
+  loggedByUser     User              @relation(fields: [loggedBy], references: [id])
+  items            FeedingItem[]
+
+  @@map("feeding_sessions")
 }
 
-enum feeding_logs_type {
-  breastfeed
-  bottle
-  solid
+model FeedingItem {
+  id                Int              @id @default(autoincrement())
+  sessionId         Int              @map("session_id")
+  foodNameBn        String           @map("food_name_bn")
+  foodNameEn        String?          @map("food_name_en")
+  category          FoodCategory
+  consistency       FoodConsistency?
+
+  // Amount — use whichever fits; amountDescription handles non-standard servings
+  amountGrams       Float?           @map("amount_grams")
+  amountMl          Float?           @map("amount_ml")
+  amountDescription String?          @map("amount_description") // e.g. "2 tablespoons", "half a bowl"
+
+  // Introduction & tolerance tracking
+  isNewFood         Boolean          @default(false) @map("is_new_food")
+  accepted          Boolean?         // null = partial, true = fully eaten, false = refused
+  reaction          String?          @db.Text // reaction specific to this food item
+
+  createdAt         DateTime         @default(now()) @map("created_at")
+  updatedAt         DateTime         @updatedAt @map("updated_at")
+
+  session           FeedingSession   @relation(fields: [sessionId], references: [id])
+
+  @@map("feeding_items")
 }
 
-enum milestones_category {
-  motor
-  cognitive
-  social
-  language
+// ── Sleep Tracking ────────────────────────────────────────────────────────────
+
+model SleepSession {
+  id              Int           @id @default(autoincrement())
+  childId         Int           @map("child_id")
+  loggedBy        Int           @map("logged_by")
+  startedAt       DateTime      @map("started_at")
+  endedAt         DateTime?     @map("ended_at")
+  type            SleepType
+  quality         SleepQuality?
+  location        String?       // e.g. "crib", "arms", "stroller"
+  notes           String?       @db.Text
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  child           Child         @relation(fields: [childId], references: [id])
+  loggedByUser    User          @relation(fields: [loggedBy], references: [id])
+
+  @@map("sleep_sessions")
 }
 
-enum vaccination_records_status {
-  pending
-  done
-  skipped
-  overdue
+// ── Activity Tracking ─────────────────────────────────────────────────────────
+
+model ActivitySession {
+  id              Int          @id @default(autoincrement())
+  childId         Int          @map("child_id")
+  loggedBy        Int          @map("logged_by")
+  startedAt       DateTime     @map("started_at")
+  durationMinutes Int?         @map("duration_minutes")
+  type            ActivityType
+  notes           String?      @db.Text
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
+
+  child           Child        @relation(fields: [childId], references: [id])
+  loggedByUser    User         @relation(fields: [loggedBy], references: [id])
+
+  @@map("activity_sessions")
 }
 
-enum children_gender {
-  male
-  female
-  other
+// ── Milestone Tracking ────────────────────────────────────────────────────────
+
+model Milestone {
+  id           Int             @id @default(autoincrement())
+  ageBracket   String          @map("age_bracket") // prenatal | 0-1m | 1-6m | 6-12m | 1-2y | 2-3y | 3-5y
+  domain       MilestoneDomain
+  textEn       String          @map("text_en") @db.Text
+  textBn       String?         @map("text_bn") @db.Text
+  sortOrder    Int             @default(0) @map("sort_order")
+  source       String?         // WHO | DGHS | EPI
+  minAgeMonths Int?            @map("min_age_months") // earliest expected age
+  maxAgeMonths Int?            @map("max_age_months") // latest before flagging
+  isKey        Boolean         @default(false) @map("is_key") // red-flag milestone
+  createdAt    DateTime        @default(now()) @map("created_at")
+  updatedAt    DateTime        @updatedAt @map("updated_at")
+
+  childMilestones ChildMilestone[]
+
+  @@map("milestones")
 }
 
-enum ai_queries_query_type {
-  general
-  risk_check
-  milestone
-  vaccination
-  nutrition
-}
+model ChildMilestone {
+  id          Int       @id @default(autoincrement())
+  childId     Int       @map("child_id")
+  milestoneId Int       @map("milestone_id")
+  isAchieved  Boolean   @default(false) @map("is_achieved")
+  achievedAt  DateTime? @map("achieved_at")
+  checkedBy   Int?      @map("checked_by")
+  notes       String?   @db.Text
+  flagged     Boolean   @default(false) // parent marked as concern
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
 
-enum feeding_logs_side {
-  left
-  right
-  both
-}
+  child         Child     @relation(fields: [childId], references: [id])
+  milestone     Milestone @relation(fields: [milestoneId], references: [id])
+  checkedByUser User?     @relation("MilestoneCheckedBy", fields: [checkedBy], references: [id])
 
-enum sleep_logs_quality {
-  poor
-  fair
-  good
-  excellent
-}
-
-enum children_journey_type {
-  prenatal
-  postnatal
-}
-
-enum users_role {
-  parent
-  health_worker
+  @@unique([childId, milestoneId])
+  @@map("child_milestones")
 }
